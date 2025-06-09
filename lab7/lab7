@@ -1,0 +1,176 @@
+from abc import ABC, abstractmethod
+from contextlib import contextmanager
+from enum import Enum
+from inspect import signature, isclass
+from typing import Type, Any, Optional, Callable, Union
+
+
+class LifeStyle(Enum):
+    PerRequest = 'PerRequest'
+    Scoped = 'Scoped'
+    Singleton = 'Singleton'
+
+
+class Injector:
+    _registry: dict[Type, tuple[Union[Type, Callable], LifeStyle, dict]]
+    _singletons: dict[Type, Any]
+
+    def __init__(self):
+        self._registry = {}
+        self._singletons = {}
+        self._scoped_instances: Optional[dict[Type, Any]] = None
+
+    def register(
+            self,
+            interface_type: Type,
+            class_type: Union[Type, Callable],
+            life_circle: LifeStyle = LifeStyle.PerRequest,
+            params: Optional[dict] = None
+    ):
+        self._registry[interface_type] = (class_type, life_circle, params or {})
+
+    def get_instance(self, interface_type: Type) -> Any:
+        impl, lifestyle, params = self._registry[interface_type]
+
+        if lifestyle == LifeStyle.Singleton:
+            if interface_type not in self._singletons:
+                self._singletons[interface_type] = self._create(impl, params)
+            return self._singletons[interface_type]
+
+        if lifestyle == LifeStyle.Scoped:
+            if self._scoped_instances is None:
+                raise RuntimeError('Scope is not active')
+            if interface_type not in self._scoped_instances:
+                self._scoped_instances[interface_type] = self._create(impl, params)
+            return self._scoped_instances[interface_type]
+
+        return self._create(impl, params)
+
+    def _create(self, impl: Union[Type, Callable], params: dict) -> Any:
+        if callable(impl) and not isclass(impl):
+            return impl()
+
+        ctor_params = {}
+        sig = signature(impl.__init__)
+        for name, param in sig.parameters.items():
+            if param.annotation in self._registry:
+                ctor_params[name] = self.get_instance(param.annotation)
+        ctor_params.update(params)
+        return impl(**ctor_params)
+
+    @contextmanager
+    def create_scope(self):
+        previous = self._scoped_instances
+        self._scoped_instances = {}
+        try:
+            yield
+        finally:
+            self._scoped_instances = previous
+
+
+class interface1(ABC):
+    @abstractmethod
+    def operation1(self) -> str:
+        pass
+
+
+class interface2(ABC):
+    @abstractmethod
+    def operation2(self) -> str:
+        pass
+
+
+class interface3(ABC):
+    @abstractmethod
+    def operation3(self) -> str:
+        pass
+
+
+class class1_debug(interface1):
+    def operation1(self) -> str:
+        return 'Debug implementation 1'
+
+
+class class1_release(interface1):
+    def operation1(self) -> str:
+        return 'Release implementation 1'
+
+
+class class2_debug(interface2):
+    def __init__(self, dep1: interface1):
+        self._dep1 = dep1
+
+    def operation2(self) -> str:
+        return f'Debug implementation 2 with {self._dep1.operation1()}'
+
+
+class class2_release(interface2):
+    def __init__(self, dep1: interface1):
+        self._dep1 = dep1
+
+    def operation2(self) -> str:
+        return f'Release implementation 2 with {self._dep1.operation1()}'
+
+
+class class3_debug(interface3):
+    def __init__(self, dep2: interface2):
+        self._dep2 = dep2
+
+    def operation3(self) -> str:
+        return f'Debug implementation 3 with {self._dep2.operation2()}'
+
+
+class class3_release(interface3):
+    def __init__(self, dep2: interface2):
+        self._dep2 = dep2
+
+    def operation3(self) -> str:
+        return f'Release implementation 3 with {self._dep2.operation2()}'
+
+
+# Первая конфигурация
+config1 = Injector()
+config1.register(interface1, class1_debug, LifeStyle.PerRequest)
+config1.register(interface2, class2_debug, LifeStyle.Scoped)
+config1.register(interface3, class3_debug, LifeStyle.Singleton)
+
+# Вторая конфигурация
+config2 = Injector()
+config2.register(interface1, class1_release, LifeStyle.Singleton)
+config2.register(interface2, class2_release, LifeStyle.PerRequest)
+config2.register(
+    interface3,
+    lambda: class3_release(config2.get_instance(interface2)),
+    LifeStyle.PerRequest
+)
+
+
+def demonstrate(injector: Injector):
+    print("\n=== Demonstration ===")
+
+    # PerRequest demo
+    instance1_a = injector.get_instance(interface1)
+    instance1_b = injector.get_instance(interface1)
+    print(f"PerRequest instances equal: {instance1_a is instance1_b}")
+    print(f"Operation1 result: {instance1_a.operation1()}")
+
+    # Scoped demo
+    with injector.create_scope():
+        instance2_a = injector.get_instance(interface2)
+        instance2_b = injector.get_instance(interface2)
+        print(f"Scoped instances equal: {instance2_a is instance2_b}")
+        print(f"Operation2 result: {instance2_a.operation2()}")
+
+        # Singleton demo
+        instance3_a = injector.get_instance(interface3)
+        instance3_b = injector.get_instance(interface3)
+        print(f"Singleton instances equal: {instance3_a is instance3_b}")
+        print(f"Operation3 result: {instance3_a.operation3()}")
+
+
+if __name__ == '__main__':
+    print("=== Configuration 1 ===")
+    demonstrate(config1)
+
+    print("\n=== Configuration 2 ===")
+    demonstrate(config2)
