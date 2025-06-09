@@ -1,0 +1,169 @@
+from typing import Protocol, List, Any
+
+
+
+class PropertyChangedListenerProtocol(Protocol):
+    def on_property_changed(self, obj: Any, property_name: str) -> None:
+
+        ...
+
+
+
+class DataChangedProtocol(Protocol):
+    def add_property_changed_listener(self, listener: PropertyChangedListenerProtocol) -> None:
+
+        ...
+
+    def remove_property_changed_listener(self, listener: PropertyChangedListenerProtocol) -> None:
+
+        ...
+
+
+
+class PropertyChangingListenerProtocol(Protocol):
+    def on_property_changing(self, obj: Any, property_name: str, old_value: Any, new_value: Any) -> bool:
+
+        ...
+
+
+
+class DataChangingProtocol(Protocol):
+    def add_property_changing_listener(self, listener: PropertyChangingListenerProtocol) -> None:
+
+        ...
+
+    def remove_property_changing_listener(self, listener: PropertyChangingListenerProtocol) -> None:
+
+        ...
+
+
+
+class Person(DataChangedProtocol, DataChangingProtocol):
+    def __init__(self, name: str, age: int):
+
+        self._name = name
+        self._age = age
+        self._changed_listeners: List[PropertyChangedListenerProtocol] = []
+        self._changing_listeners: List[PropertyChangingListenerProtocol] = []
+
+
+
+    def add_property_changed_listener(self, listener: PropertyChangedListenerProtocol) -> None:
+
+        self._changed_listeners.append(listener)
+
+    def remove_property_changed_listener(self, listener: PropertyChangedListenerProtocol) -> None:
+
+        self._changed_listeners.remove(listener)
+
+    def add_property_changing_listener(self, listener: PropertyChangingListenerProtocol) -> None:
+
+        self._changing_listeners.append(listener)
+
+    def remove_property_changing_listener(self, listener: PropertyChangingListenerProtocol) -> None:
+
+        self._changing_listeners.remove(listener)
+
+
+
+    def _notify_changed(self, property_name: str):
+
+        for listener in self._changed_listeners:
+            listener.on_property_changed(self, property_name)
+
+    def _notify_changing(self, property_name: str, old_value: Any, new_value: Any) -> bool:
+
+        for listener in self._changing_listeners:
+            if not listener.on_property_changing(self, property_name, old_value, new_value):
+                return False
+        return True
+
+
+
+    @property
+    def name(self) -> str:
+
+        return self._name
+
+    @name.setter
+    def name(self, new_name: str):
+
+        if new_name != self._name and self._notify_changing("name", self._name, new_name):
+            self._name = new_name
+            self._notify_changed("name")
+
+    @property
+    def age(self) -> int:
+
+        return self._age
+
+    @age.setter
+    def age(self, new_age: int):
+
+        if new_age != self._age and self._notify_changing("age", self._age, new_age):
+            self._age = new_age
+            self._notify_changed("age")
+
+    def __repr__(self):
+
+        return f"Person(name='{self._name}', age={self._age})"
+
+
+
+
+
+class ConsoleChangedListener:
+    def on_property_changed(self, obj: Any, property_name: str) -> None:
+        print(f"[Изменение] Свойство '{property_name}' объекта {obj} было изменено")
+
+
+
+class AgeValidator:
+    def on_property_changing(self, obj: Any, property_name: str, old_value: Any, new_value: Any) -> bool:
+        if property_name == "age":
+            if new_value < 0:
+                print(f"[Ошибка] Возраст не может быть отрицательным: {new_value}")
+                return False
+            if new_value > 120:
+                print(f"[Ошибка] Слишком большой возраст: {new_value}")
+                return False
+        return True
+
+
+
+class NameValidator:
+    def on_property_changing(self, obj: Any, property_name: str, old_value: Any, new_value: Any) -> bool:
+        if property_name == "name":
+            if not new_value.strip():
+                print("[Ошибка] Имя не может быть пустым")
+                return False
+            if len(new_value) > 50:
+                print("[Ошибка] Слишком длинное имя (макс. 50 символов)")
+                return False
+        return True
+
+
+
+
+if __name__ == "__main__":
+    print("=== Создание объекта Person ===")
+    person = Person("Иван Иванов", 30)
+    print(person)
+
+    print("\n=== Добавление слушателей и валидаторов ===")
+    person.add_property_changed_listener(ConsoleChangedListener())
+    person.add_property_changing_listener(AgeValidator())
+    person.add_property_changing_listener(NameValidator())
+
+    print("\n=== Корректные изменения ===")
+    person.name = "Петр Петров"
+    person.age = 35
+
+    print("\n=== Некорректные изменения ===")
+    person.name = ""
+    person.age = -5
+    person.age = 150
+    person.name = "Очень-очень-очень длинное имя, которое превышает лимит в 50 символов"
+
+    print("\n=== Проверка текущего состояния ===")
+    print("Текущие данные:", person)
