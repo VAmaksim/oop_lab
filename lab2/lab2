@@ -14,24 +14,23 @@ class Color(Enum):
     RESET = "\033[0m"
 
 
-FONT_FILE = "font.json"
-
-if os.path.exists(FONT_FILE):
-    with open(FONT_FILE, "r", encoding="utf-8") as file:
-        FONT_DATA = json.load(file)
-else:
-    raise FileNotFoundError(f"Font file '{FONT_FILE}' not found")
-
-
 class Printer:
     def __init__(self, color: Color, position: Optional[Tuple[int, int]] = None,
                  symbol: str = "*", font_size: int = 1):
         self.color = color
         self.symbol = symbol
         self.font_size = font_size
-        self.original_position = (0, 0)
-        self.position = position or self.original_position
-        self.current_line = 0
+        self.position = position or (0, 0)
+
+        # Загрузка шрифта
+        self.font_data = self._load_font()
+
+    def _load_font(self) -> Dict:
+        font_file = "font.json"
+        if os.path.exists(font_file):
+            with open(font_file, "r", encoding="utf-8") as file:
+                return json.load(file)
+        raise FileNotFoundError(f"Font file '{font_file}' not found")
 
     def __enter__(self):
         return self
@@ -39,71 +38,85 @@ class Printer:
     def __exit__(self, exc_type, exc_val, exc_tb):
         print(Color.RESET.value, end="")
 
-    @staticmethod
-    def print(text: str, color: Color, position: Optional[Tuple[int, int]] = None,
+    @classmethod
+    def print(cls, text: str, color: Color, position: Optional[Tuple[int, int]] = None,
               symbol: str = "*", font_size: int = 1):
-        Printer._render_text(text, color, position, symbol, font_size)
+        printer = cls(color, position, symbol, font_size)
+        printer._print_text(text)
 
     def print_text(self, text: str):
-        Printer._render_text(text, self.color, self.position, self.symbol, self.font_size)
+        self._print_text(text)
 
-    @staticmethod
-    def _scale_pattern(pattern: List[str], scale: int) -> List[str]:
-        if scale == 1:
-            return pattern
+    def _print_text(self, text: str):
+        # Получаем все строки для вывода
+        output_lines = self._prepare_text(text)
 
-        scaled_pattern = []
-        for line in pattern:
-            scaled_line = ""
-            for char in line:
-                scaled_line += char * scale
-            for _ in range(scale):
-                scaled_pattern.append(scaled_line)
-        return scaled_pattern
-
-    @staticmethod
-    def _render_text(text: str, color: Color, position: Optional[Tuple[int, int]],
-                     symbol: str, font_size: int):
-        # Clear console before rendering
-        os.system('cls' if os.name == 'nt' else 'clear')
-
-        position = position or (0, 0)
-        base_height = FONT_DATA['height']
-        lines = ["" for _ in range(base_height * font_size)]
-
-        for char in text.upper():
-            if char in FONT_DATA["symbols"]:
-                char_pattern = FONT_DATA["symbols"][char].split("\n")
-            else:
-                print(f"Warning: Character '{char}' not found in font, replaced with space")
-                char_pattern = FONT_DATA["symbols"][" "].split("\n")
-
-            scaled_pattern = Printer._scale_pattern(char_pattern, font_size)
-
-            for i, line in enumerate(scaled_pattern):
-                if symbol:
-                    line = line.replace("*", symbol)
-                lines[i] += line + (" " * font_size * 2)
-
-        # Optimized positioning
-        for i, line in enumerate(lines):
-            print(f"\033[{position[1] + i};{position[0]}H{color.value}{line}")
+        # Выводим каждую строку
+        for i, line in enumerate(output_lines):
+            print(f"\033[{self.position[1] + i};{self.position[0]}H{self.color.value}{line}")
 
         print(Color.RESET.value, end="", flush=True)
 
+    def _prepare_text(self, text: str) -> List[str]:
+        # Подготовка всех символов
+        char_blocks = []
+        max_height = 0
+
+        for char in text.upper():
+            if char in self.font_data["symbols"]:
+                char_pattern = self.font_data["symbols"][char].split("\n")
+            else:
+                char_pattern = self.font_data["symbols"][" "].split("\n")
+
+            # Масштабируем символ
+            scaled_char = self._scale_char(char_pattern)
+            char_blocks.append(scaled_char)
+            max_height = max(max_height, len(scaled_char))
+
+        # Объединяем все символы
+        output_lines = [""] * max_height
+        for char_block in char_blocks:
+            for i in range(max_height):
+                if i < len(char_block):
+                    output_lines[i] += char_block[i].replace("*", self.symbol) + " "
+                else:
+                    output_lines[i] += " " * (len(char_block[0]) if char_block else "") + " "
+
+        return output_lines
+
+    def _scale_char(self, char_pattern: List[str]) -> List[str]:
+        if self.font_size == 1:
+            return char_pattern
+
+        scaled_char = []
+        # Масштабируем по вертикали
+        for line in char_pattern:
+            # Масштабируем по горизонтали
+            scaled_line = ""
+            for ch in line:
+                scaled_line += ch * self.font_size
+            # Добавляем масштабированные строки
+            for _ in range(self.font_size):
+                scaled_char.append(scaled_line)
+
+        return scaled_char
+
 
 if __name__ == "__main__":
-    # Статический вызов с разными размерами шрифта
-    Printer.print("SMALL", Color.RED, (5, 5), "■", 1)
-    Printer.print("MEDIUM", Color.GREEN, (5, 12), "●", 2)
-    Printer.print("LARGE", Color.BLUE, (5, 25), "▲", 3)
+    # Очищаем консоль перед выводом
+    os.system('cls' if os.name == 'nt' else 'clear')
 
-    # Использование контекстного менеджера с разными размерами
-    with Printer(Color.CYAN, (5, 40), "♥", 1) as small_printer:
-        small_printer.print_text("TRUE")
+    # Статический вызов
+    Printer.print("HELLO", Color.RED, (5, 5), "■", 1)
+    Printer.print("WORLD", Color.GREEN, (5, 15), "●", 2)
+    Printer.print("PYTHON", Color.BLUE, (5, 30), "▲", 3)
 
-    with Printer(Color.MAGENTA, (10, 40), "♦", 2) as medium_printer:
-        medium_printer.print_text("TRUE")
+    # Использование контекстного менеджера
+    with Printer(Color.CYAN, (10, 5), "♥", 1) as printer:
+        printer.print_text("SMALL")
 
-    with Printer(Color.YELLOW, (20, 40), "♣", 3) as large_printer:
-        large_printer.print_text("TRUE")
+    with Printer(Color.MAGENTA, (15, 5), "♦", 2) as printer:
+        printer.print_text("MEDIUM")
+
+    with Printer(Color.YELLOW, (20, 5), "♣", 3) as printer:
+        printer.print_text("LARGE")
