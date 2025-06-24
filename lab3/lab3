@@ -1,29 +1,53 @@
 from typing import Protocol, List
-import re, socket
+import re
+import socket
+import sys
+from functools import reduce
+
 
 class LogFilterProtocol(Protocol):
     def match(self, text: str) -> bool: ...
 
+
 class LogHandlerProtocol(Protocol):
     def handle(self, text: str) -> None: ...
+
 
 class SimpleLogFilter:
     def __init__(self, pattern: str):
         self.pattern = pattern
 
     def match(self, text: str) -> bool:
-        return self.pattern in text
+        try:
+            return self.pattern in text
+        except Exception as e:
+            print(f"\033[91m[FILTER ERROR] Simple filter failed: {e}\033[0m", file=sys.stderr)
+            return False
+
 
 class ReLogFilter:
     def __init__(self, pattern: str):
-        self.pattern = re.compile(pattern)
+        try:
+            self.pattern = re.compile(pattern)
+        except re.error as e:
+            print(f"\033[91m[REGEX ERROR] Invalid regex pattern: {e}\033[0m", file=sys.stderr)
+            self.pattern = re.compile(r'(?!x)x')  # Never matching pattern as fallback
 
     def match(self, text: str) -> bool:
-        return bool(self.pattern.search(text))
+        try:
+            return bool(self.pattern.search(text))
+        except Exception as e:
+            print(f"\033[91m[FILTER ERROR] Regex filter failed: {e}\033[0m", file=sys.stderr)
+            return False
+
 
 class ConsoleHandler:
     def handle(self, text: str) -> None:
-        print(text)
+        try:
+            print(text)
+        except Exception as e:
+            print(f"\033[91m[CONSOLE ERROR] Failed to print log: {e}\033[0m", file=sys.stderr)
+
 
 class FileHandler:
     def __init__(self, filename: str):
@@ -31,10 +55,13 @@ class FileHandler:
 
     def handle(self, text: str) -> None:
         try:
-            with open(self.filename, 'a') as f:
+            with open(self.filename, 'a', encoding='utf-8') as f:
                 f.write(text + '\n')
+        except PermissionError:
+            print(f"\033[91m[FILE ERROR] Permission denied when writing to {self.filename}\033[0m", file=sys.stderr)
         except Exception as e:
-            print(f"\033[91m[FILE ERROR] Failed to write to file: {e}\033[0m")
+            print(f"\033[91m[FILE ERROR] Failed to write to file: {e}\033[0m", file=sys.stderr)
+
 
 class SocketHandler:
     def __init__(self, host: str, port: int):
@@ -44,14 +71,44 @@ class SocketHandler:
     def handle(self, text: str) -> None:
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)  # Set timeout to avoid hanging
                 s.connect((self.host, self.port))
                 s.sendall((text + '\n').encode('utf-8'))
+        except socket.timeout:
+            print(f"\033[91m[SOCKET ERROR] Connection timeout for {self.host}:{self.port}\033[0m", file=sys.stderr)
+        except ConnectionRefusedError:
+            print(f"\033[91m[SOCKET ERROR] Connection refused by {self.host}:{self.port}\033[0m", file=sys.stderr)
         except Exception as e:
-            print(f"\033[91m[SOCKET ERROR] Failed to send log: {e}\033[0m")
+            print(f"\033[91m[SOCKET ERROR] Failed to send log: {e}\033[0m", file=sys.stderr)
+
 
 class SyslogHandler:
+    def __init__(self):
+        self.available = False
+        # Try to import syslog only on Unix-like systems
+        if not sys.platform.startswith('win'):
+            try:
+                import syslog
+                self.syslog = syslog
+                syslog.openlog(facility=syslog.LOG_USER)
+                self.available = True
+            except ImportError:
+                print("\033[93m[SYSLOG WARNING] syslog module not available\033[0m", file=sys.stderr)
+            except Exception as e:
+                print(f"\033[91m[SYSLOG ERROR] Failed to open syslog: {e}\033[0m", file=sys.stderr)
+        else:
+            print("\033[93m[SYSLOG WARNING] syslog not supported on Windows\033[0m", file=sys.stderr)
+
     def handle(self, text: str) -> None:
-        print(f"\033[93m[SYSLOG] {text}\033[0m")
+        if not self.available:
+            print(f"\033[93m[SYSLOG SIMULATION] {text}\033[0m")
+            return
+
+        try:
+            self.syslog.syslog(text)
+        except Exception as e:
+            print(f"\033[91m[SYSLOG ERROR] Failed to write to syslog: {e}\033[0m", file=sys.stderr)
+
 
 class Logger:
     def __init__(self, filters: List[LogFilterProtocol] = None, handlers: List[LogHandlerProtocol] = None):
@@ -59,47 +116,64 @@ class Logger:
         self.handlers = handlers if handlers else []
 
     def log(self, text: str) -> None:
-        if self.filters and not any(f.match(text) for f in self.filters):
-            return
+        try:
+            # Message must pass ALL filters (logical AND)
+            if self.filters and not all(f.match(text) for f in self.filters):
+                return
 
-        for handler in self.handlers:
-            handler.handle(text)
+            for handler in self.handlers:
+                try:
+                    handler.handle(text)
+                except Exception as e:
+                    print(f"\033[91m[HANDLER ERROR] Handler failed: {e}\033[0m", file=sys.stderr)
+        except Exception as e:
+            print(f"\033[91m[LOGGER ERROR] Logging failed: {e}\033[0m", file=sys.stderr)
+
 
 if __name__ == "__main__":
-    errorFilter = SimpleLogFilter("ERROR")
-    warningFilter = SimpleLogFilter("WARNING")
-    httpFilter = ReLogFilter(r"HTTP/\d\.\d")
+    try:
+        errorFilter = SimpleLogFilter("ERROR")
+        warningFilter = SimpleLogFilter("WARNING")
+        httpFilter = ReLogFilter(r"HTTP/\d\.\d")
 
-    consoleHandler = ConsoleHandler()
-    fileHandler = FileHandler("Log.log")
-    socketHandler = SocketHandler("localhost", 8787)
-    syslogHandler = SyslogHandler()
+        consoleHandler = ConsoleHandler()
+        fileHandler = FileHandler("Log.log")
+        socketHandler = SocketHandler("localhost", 8787)
+        syslogHandler = SyslogHandler()
 
-    errorLogger = Logger(filters=[errorFilter], handlers=[consoleHandler, fileHandler, syslogHandler])
-    warningLogger = Logger(filters=[warningFilter], handlers=[consoleHandler, fileHandler])
-    httpLogger = Logger(filters=[httpFilter], handlers=[consoleHandler, fileHandler, socketHandler])
-    defaultLogger = Logger(handlers=[consoleHandler])
+        # Logger that requires both ERROR and HTTP filters
+        error_http_logger = Logger(
+            filters=[errorFilter, httpFilter],
+            handlers=[consoleHandler, fileHandler, syslogHandler]
+        )
 
-    testLogs = [
-        "INFO: Hello, I'm an information",
-        "ERROR: Application is not responding",
-        "WARNING: Memory leakage",
-        "INFO: HTTP/1.1 request received",
-        "ERROR: HTTP/2.0 connection error"
-    ]
+        warningLogger = Logger(filters=[warningFilter], handlers=[consoleHandler, fileHandler])
+        httpLogger = Logger(filters=[httpFilter], handlers=[consoleHandler, fileHandler, socketHandler])
+        defaultLogger = Logger(handlers=[consoleHandler])
 
-    print("ERROR logs:")
-    for logText in testLogs:
-        errorLogger.log(logText)
+        testLogs = [
+            "INFO: Hello, I'm an information",
+            "ERROR: Application is not responding",
+            "WARNING: Memory leakage",
+            "INFO: HTTP/1.1 request received",
+            "ERROR: HTTP/2.0 connection error"
+        ]
 
-    print("---------------\nWARNING logs:")
-    for logText in testLogs:
-        warningLogger.log(logText)
+        print("ERROR & HTTP logs (must match both filters):")
+        for logText in testLogs:
+            error_http_logger.log(logText)
 
-    print("---------------\nHTTP logs:")
-    for logText in testLogs:
-        httpLogger.log(logText)
+        print("---------------\nWARNING logs:")
+        for logText in testLogs:
+            warningLogger.log(logText)
 
-    print("---------------\nALL logs:")
-    for logText in testLogs:
-        defaultLogger.log(logText)
+        print("---------------\nHTTP logs:")
+        for logText in testLogs:
+            httpLogger.log(logText)
+
+        print("---------------\nALL logs:")
+        for logText in testLogs:
+            defaultLogger.log(logText)
+
+    except Exception as e:
+        print(f"\033[91m[SYSTEM ERROR] Critical failure: {e}\033[0m", file=sys.stderr)
