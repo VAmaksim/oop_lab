@@ -1,122 +1,110 @@
-import json
-import os
 from enum import Enum
-from typing import Tuple, Dict, List, Optional
+from typing import Self
+
+COLORING = "\033[{}m\033[{}m{}"
+PLACING = "\033[{};{}H{}"
 
 
 class Color(Enum):
-    RED = "\033[31m"
-    GREEN = "\033[32m"
-    BLUE = "\033[34m"
-    YELLOW = "\033[33m"
-    CYAN = "\033[36m"
-    MAGENTA = "\033[35m"
-    RESET = "\033[0m"
+    TRANSPARENT = 0
+    BLACK = 30
+    RED = 31
+    GREEN = 32
+    YELLOW = 33
+    BLUE = 34
+    MAGENTA = 35
+    CYAN = 36
+    WHITE = 37
 
 
+    
 class Printer:
-    def __init__(self, color: Color, position: Optional[Tuple[int, int]] = None,
-                 symbol: str = "*", font_size: int = 1):
+    _font: dict[str, list[str]] = {}
+    _char_width: int = 5
+    _char_height: int = 5
+
+    def __init__(self, color: Color, position: tuple[int, int], symbol: str, background_color: Color = Color.TRANSPARENT) -> None:
         self.color = color
+        self.background_color = background_color
         self.symbol = symbol
-        self.font_size = font_size
-        self.position = position or (0, 0)
+        self.initial_x, self.initial_y = position
+        self.current_x, self.current_y = position
 
-        # Загрузка шрифта
-        self.font_data = self._load_font()
-
-    def _load_font(self) -> Dict:
-        font_file = "font.json"
-        if os.path.exists(font_file):
-            with open(font_file, "r", encoding="utf-8") as file:
-                return json.load(file)
-        raise FileNotFoundError(f"Font file '{font_file}' not found")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        print(Color.RESET.value, end="")
 
     @classmethod
-    def print(cls, text: str, color: Color, position: Optional[Tuple[int, int]] = None,
-              symbol: str = "*", font_size: int = 1):
-        printer = cls(color, position, symbol, font_size)
-        printer._print_text(text)
+    def load_font(cls, filename: str = "font.txt") -> None:
+        try:
+            with open(filename, "r") as file:
+                cls._font.clear()
+                cls._char_height = file.readline().count('|')
+                cls._char_width = file.readline().count('_')
+                cls._font[' '] = [' '*cls._char_width for _ in range(cls._char_height)]
+                while True:
+                    char = file.readline().replace('-', '').strip()
+                    if char == '':
+                        break
+                    cls._font[char] = []
+                    for _ in range(cls._char_height):
+                        line = file.readline()[:cls._char_width]
+                        if '-' in line:
+                            raise ValueError(f"файл шрифтов недействителен. вот корректный список {cls._font.keys()}")
+                        cls._font[char].append(line)
+        except Exception as e:
+            print(f"ошибка загрузки файла с шрифтами: {e}")
+            raise FileNotFoundError
+        
 
-    def print_text(self, text: str):
-        self._print_text(text)
+    @classmethod
+    def print_(cls, text: str, color: Color, position: tuple[int, int], symbol: str, background_color: Color = Color.BLACK) -> None:
+        if not cls._font:
+            cls.load_font()
+        
+        x, y = position
+        for char in text:
+            if char not in cls._font:
+                raise ValueError(f"{char} нет в файле")
+            
+            for line_num, line in enumerate(cls._font[char]):
+                rendered = line.replace("*", symbol)
+                print(PLACING.format(y + line_num + 1, x + 1, COLORING.format(color.value, background_color.value + 10, rendered)), end="")
+            
+            x += cls._char_width
+        print()
 
-    def _print_text(self, text: str):
-        # Получаем все строки для вывода
-        output_lines = self._prepare_text(text)
 
-        # Выводим каждую строку
-        for i, line in enumerate(output_lines):
-            print(f"\033[{self.position[1] + i};{self.position[0]}H{self.color.value}{line}")
+    def __enter__(self) -> Self:
+        print(COLORING.format(self.color.value, self.background_color.value + 10, ''), end="") 
+        return self
 
-        print(Color.RESET.value, end="", flush=True)
 
-    def _prepare_text(self, text: str) -> List[str]:
-        # Подготовка всех символов
-        char_blocks = []
-        max_height = 0
+    def __exit__(self, *args) -> None:
+        print(COLORING.format(Color.TRANSPARENT.value, Color.TRANSPARENT.value + 10, ''), end="")
 
-        for char in text.upper():
-            if char in self.font_data["symbols"]:
-                char_pattern = self.font_data["symbols"][char].split("\n")
-            else:
-                char_pattern = self.font_data["symbols"][" "].split("\n")
 
-            # Масштабируем символ
-            scaled_char = self._scale_char(char_pattern)
-            char_blocks.append(scaled_char)
-            max_height = max(max_height, len(scaled_char))
+    def print(self, text: str) -> None:
+        if not self._font:
+            self.load_font()
+        x, y = self.current_x, self.current_y
+        for char in text:
+            if char not in self._font:
+                continue
+            
+            for line_num, line in enumerate(self._font[char]):
+                rendered = line.replace("*", self.symbol)
+                # print(f"\033[{y + line_num + 1};{x + 1}H{rendered}", end="")
+                print(PLACING.format(y + line_num + 1, x + 1, rendered), end="")
+            
+            x += self._char_width
+        self.current_x = x
 
-        # Объединяем все символы
-        output_lines = [""] * max_height
-        for char_block in char_blocks:
-            for i in range(max_height):
-                if i < len(char_block):
-                    output_lines[i] += char_block[i].replace("*", self.symbol) + " "
-                else:
-                    output_lines[i] += " " * (len(char_block[0]) if char_block else "") + " "
-
-        return output_lines
-
-    def _scale_char(self, char_pattern: List[str]) -> List[str]:
-        if self.font_size == 1:
-            return char_pattern
-
-        scaled_char = []
-        # Масштабируем по вертикали
-        for line in char_pattern:
-            # Масштабируем по горизонтали
-            scaled_line = ""
-            for ch in line:
-                scaled_line += ch * self.font_size
-            # Добавляем масштабированные строки
-            for _ in range(self.font_size):
-                scaled_char.append(scaled_line)
-
-        return scaled_char
 
 
 if __name__ == "__main__":
-    # Очищаем консоль перед выводом
-    os.system('cls' if os.name == 'nt' else 'clear')
-
-    # Статический вызов
-    Printer.print("HELLO", Color.RED, (5, 5), "■", 1)
-    Printer.print("WORLD", Color.GREEN, (5, 15), "●", 2)
-    Printer.print("PYTHON", Color.BLUE, (5, 30), "▲", 3)
-
-    # Использование контекстного менеджера
-    with Printer(Color.CYAN, (10, 5), "♥", 1) as printer:
-        printer.print_text("SMALL")
-
-    with Printer(Color.MAGENTA, (15, 5), "♦", 2) as printer:
-        printer.print_text("MEDIUM")
-
-    with Printer(Color.YELLOW, (20, 5), "♣", 3) as printer:
-        printer.print_text("LARGE")
+    for _ in range(30):
+        print()
+    Printer.load_font(filename="font5.txt")
+    Printer.print_("ABCDEFGHS", Color.RED, (5, 2), "#", background_color=Color.TRANSPARENT)
+    Printer.load_font(filename="font7.txt")
+    with Printer(Color.GREEN, (0, 10), "@", background_color=Color.BLACK) as printer:
+        printer.print("SUPER CLASS")
+        printer.print("ABCDEFGHS")
