@@ -1,0 +1,50 @@
+[
+  {
+    "id": 100,
+    "login": "root",
+    "password": "toor",
+    "name": "Chief System",
+    "email": "sys@internal.local",
+    "address": null
+  },
+  {
+    "id": 101,
+    "login": "guest123",
+    "password": "letmein",
+    "name": "Almin G.",
+    "email": "contact@somewhere.net",
+    "address": "Hidden Base 7"
+  },
+  {
+    "id": 102,
+    "login": "alpha_wolf",
+    "password": "hunterX",
+    "name": "Kirill M.",
+    "email": "alpha@packmail.org",
+    "address": "Sector-8 Warehouse"
+  },
+  {
+    "id": 103,
+    "login": "echo99",
+    "password": "mirrorMe",
+    "name": "Nadia T.",
+    "email": "echo@loopback.io",
+    "address": "The Overlook, Room 302"
+  },
+  {
+    "id": 104,
+    "login": "xeno_ops",
+    "password": "passXeno",
+    "name": "Operator X",
+    "email": "x.ops@outpost.zone",
+    "address": "Labyrinth Node 13"
+  },
+  {
+    "id": 105,
+    "login": "lynx_dev",
+    "password": "c0d3base",
+    "name": "T. Volkov",
+    "email": "lynx@devlabs.dev",
+    "address": "Stacktrace Blvd 21"
+  }
+]
