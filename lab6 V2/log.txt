@@ -1,0 +1,61 @@
+set: a -> {'command': 'char', 'arg': 'a'}
+set: b -> {'command': 'char', 'arg': 'b'}
+set: c -> {'command': 'char', 'arg': 'c'}
+set: d -> {'command': 'char', 'arg': 'd'}
+set: ctrl++ -> {'command': 'volume_up'}
+set: ctrl+- -> {'command': 'volume_down'}
+set: ctrl+p -> {'command': 'media_player'}
+a
+a
+b
+ab
+c
+abc
+undo
+ab
+undo
+a
+redo
+ab
+ctrl++
+volume increased +20% (current: 70%)
+ctrl+-
+volume decreased -20% (current: 50%)
+ctrl+p
+media player launched
+d
+abd
+undo
+ab
+undo
+media player closedset: a -> {'command': 'char', 'arg': 'a'}
+set: b -> {'command': 'char', 'arg': 'b'}
+set: c -> {'command': 'char', 'arg': 'c'}
+set: d -> {'command': 'char', 'arg': 'd'}
+set: ctrl++ -> {'command': 'volume_up'}
+set: ctrl+- -> {'command': 'volume_down'}
+set: ctrl+p -> {'command': 'media_player'}
+a
+a
+b
+ab
+c
+abc
+undo
+ab
+undo
+a
+redo
+ab
+ctrl++
+volume increased +20% (current: 70%)
+ctrl+-
+volume decreased -20% (current: 50%)
+ctrl+p
+media player launched
+d
+abd
+undo
+ab
+undo
+media player closed
