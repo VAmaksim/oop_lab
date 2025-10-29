@@ -1,0 +1,27 @@
+{
+  "a": {
+    "command": "char",
+    "arg": "a"
+  },
+  "b": {
+    "command": "char",
+    "arg": "b"
+  },
+  "c": {
+    "command": "char",
+    "arg": "c"
+  },
+  "ctrl++": {
+    "command": "volume_up"
+  },
+  "ctrl+-": {
+    "command": "volume_down"
+  },
+  "ctrl+p": {
+    "command": "media_player"
+  },
+  "d": {
+    "command": "char",
+    "arg": "d"
+  }
+}
