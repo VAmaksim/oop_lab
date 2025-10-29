@@ -1,0 +1,21 @@
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR: Something went wrong!
+WARNING: This might be risky!
+WARN: Low disk space
+ERROR WARNING: Critical issue!
+ERROR WARNING: Critical issue!
+ERROR WARNING: Critical issue!
